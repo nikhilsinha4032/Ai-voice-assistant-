@@ -339,9 +339,40 @@ export default function App() {
     const isUpdate = persistedTurnIdsRef.current.has(safeId);
     persistedTurnIdsRef.current.add(safeId);
     void upsertTurnInCloud(uid, { ...turn, id: safeId }, isUpdate).catch((err) => {
+      persistedTurnIdsRef.current.delete(safeId);
       setErrorMessage(err instanceof Error ? err.message : 'Failed to save transcript turn.');
     });
   }, []);
+
+  const persistTicketSmart = useCallback((uid: string, ticket: CrmTicket) => {
+    const safeId = sanitizeDocId(ticket.id, 'tkt');
+    const existed = knownTicketIdsRef.current.has(safeId);
+    void upsertTicketInCloud(uid, { ...ticket, id: safeId }, existed)
+      .then(() => {
+        knownTicketIdsRef.current.add(safeId);
+      })
+      .catch((err) => {
+        setErrorMessage(err instanceof Error ? err.message : 'Failed to save CRM ticket.');
+      });
+  }, []);
+
+  const persistSessionPrefsSafe = useCallback(
+    (
+      uid: string,
+      prefs: {
+        preferredLanguage?: string;
+        activeTicketId?: string | null;
+        activeLanguage?: string | null;
+      }
+    ) => {
+      void saveUserSessionPrefs(uid, prefs).catch((err) => {
+        setErrorMessage(
+          err instanceof Error ? err.message : 'Failed to save session preferences.'
+        );
+      });
+    },
+    []
+  );
 
   const scheduleLiveTurnFlush = useCallback(
     (uid: string, turnId: string) => {
@@ -749,9 +780,7 @@ export default function App() {
                 : [msg.ticket!, ...prev];
             });
             if (canPersistCloud) {
-              const existed = knownTicketIdsRef.current.has(msg.ticket.id);
-              knownTicketIdsRef.current.add(msg.ticket.id);
-              void upsertTicketInCloud(uid, msg.ticket, existed);
+              persistTicketSmart(uid, msg.ticket);
             }
           }
           const transitionText =
@@ -775,7 +804,7 @@ export default function App() {
           if (canPersistCloud) {
             persistTurnSmart(uid, systemTurn);
             if (msg.activeLanguage) {
-              void saveUserSessionPrefs(uid, { activeLanguage: msg.activeLanguage });
+              persistSessionPrefsSafe(uid, { activeLanguage: msg.activeLanguage });
             }
           }
           return;
@@ -786,7 +815,7 @@ export default function App() {
             setActiveLanguage(msg.activeLanguage);
             setSwitchPending(false);
             if (canPersistCloud) {
-              void saveUserSessionPrefs(uid, { activeLanguage: msg.activeLanguage });
+              persistSessionPrefsSafe(uid, { activeLanguage: msg.activeLanguage });
             }
           }
           if (msg.ticket) {
@@ -797,9 +826,7 @@ export default function App() {
                 : [msg.ticket!, ...prev];
             });
             if (canPersistCloud) {
-              const existed = knownTicketIdsRef.current.has(msg.ticket.id);
-              knownTicketIdsRef.current.add(msg.ticket.id);
-              void upsertTicketInCloud(uid, msg.ticket, existed);
+              persistTicketSmart(uid, msg.ticket);
             }
           }
           return;
@@ -934,10 +961,8 @@ export default function App() {
           });
           if (canPersistCloud) {
             flushAllPendingLiveTurns();
-            const existed = knownTicketIdsRef.current.has(msg.ticket.id);
-            knownTicketIdsRef.current.add(msg.ticket.id);
-            void upsertTicketInCloud(uid, msg.ticket, existed);
-            void saveUserSessionPrefs(uid, {
+            persistTicketSmart(uid, msg.ticket);
+            persistSessionPrefsSafe(uid, {
               activeTicketId: msg.ticket.id,
               activeLanguage: msg.nlu?.language ?? activeLanguage ?? '',
             });
@@ -972,7 +997,7 @@ export default function App() {
 
     const canPersistCloud = Boolean(authUser?.uid && authUser.emailVerified);
     if (canPersistCloud && authUser) {
-      void saveUserSessionPrefs(authUser.uid, {
+      persistSessionPrefsSafe(authUser.uid, {
         preferredLanguage: nextLang,
         activeLanguage: normalized ?? '',
       });
@@ -1024,7 +1049,9 @@ export default function App() {
     if (params.resetLock && canPersistCloud && turns.length > 0) {
       const oldIds = turns.map((t) => t.id);
       persistedTurnIdsRef.current.clear();
-      void clearTurnsInCloud(uid, oldIds);
+      void clearTurnsInCloud(uid, oldIds).catch((err) => {
+        setErrorMessage(err instanceof Error ? err.message : 'Failed to clear cloud turns.');
+      });
     }
 
     const callerTurn: TranscriptTurn = {
@@ -1211,18 +1238,14 @@ export default function App() {
             : [updatedTicket, ...prev];
         });
         if (canPersistCloud) {
-          const existed = knownTicketIdsRef.current.has(updatedTicket.id);
-          knownTicketIdsRef.current.add(updatedTicket.id);
-          void upsertTicketInCloud(uid, updatedTicket, existed).catch((err) => {
-            setErrorMessage(err instanceof Error ? err.message : 'Failed to save ticket.');
-          });
-          void saveUserSessionPrefs(uid, {
+          persistTicketSmart(uid, updatedTicket);
+          persistSessionPrefsSafe(uid, {
             activeTicketId: updatedTicket.id,
             activeLanguage: payload.activeLanguage ?? activeLanguage ?? '',
           });
         }
       } else if (canPersistCloud && payload.activeLanguage) {
-        void saveUserSessionPrefs(uid, { activeLanguage: payload.activeLanguage });
+        persistSessionPrefsSafe(uid, { activeLanguage: payload.activeLanguage });
       }
     } catch (err: unknown) {
       setErrorMessage(
@@ -1253,8 +1276,10 @@ export default function App() {
       void clearTurnsInCloud(
         authUser.uid,
         previousTurns.map((t) => t.id)
-      );
-      void saveUserSessionPrefs(authUser.uid, {
+      ).catch((err) => {
+        setErrorMessage(err instanceof Error ? err.message : 'Failed to clear cloud turns.');
+      });
+      persistSessionPrefsSafe(authUser.uid, {
         activeTicketId: '',
         activeLanguage: nextLang ?? '',
       });
@@ -1288,10 +1313,14 @@ export default function App() {
             : t
         )
       );
-      await updateTicketManualInCloud(authUser.uid, id, {
-        ...patch,
-        ...(zendeskPriority ? { zendeskPriority } : {}),
-      });
+      try {
+        await updateTicketManualInCloud(authUser.uid, id, {
+          ...patch,
+          ...(zendeskPriority ? { zendeskPriority } : {}),
+        });
+      } catch (err: unknown) {
+        setErrorMessage(err instanceof Error ? err.message : 'Failed to update ticket.');
+      }
       void fetch(`/api/crm/tickets/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -1332,13 +1361,17 @@ export default function App() {
           )
         );
       }
-      await syncTicketInCloud(
-        authUser.uid,
-        id,
-        nowIso,
-        targetTicket.platform,
-        nextCount
-      );
+      try {
+        await syncTicketInCloud(
+          authUser.uid,
+          id,
+          nowIso,
+          targetTicket.platform,
+          nextCount
+        );
+      } catch (err: unknown) {
+        setErrorMessage(err instanceof Error ? err.message : 'Failed to sync ticket.');
+      }
       void fetch(`/api/crm/tickets/${id}/sync`, { method: 'POST' }).catch(() => undefined);
       return;
     }
@@ -1363,7 +1396,11 @@ export default function App() {
   const handleSaveRule = async (id: string, patch: Partial<TriageRule>) => {
     if (authUser?.uid && authUser.emailVerified) {
       setRules((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
-      await updateRuleInCloud(authUser.uid, id, patch);
+      try {
+        await updateRuleInCloud(authUser.uid, id, patch);
+      } catch (err: unknown) {
+        setErrorMessage(err instanceof Error ? err.message : 'Failed to save rule.');
+      }
       void fetch(`/api/crm/rules/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -1391,7 +1428,11 @@ export default function App() {
       setConnectors((prev) =>
         prev.map((c) => (c.platform === platform ? { ...c, ...patch } : c))
       );
-      await updateConnectorInCloud(authUser.uid, platform, patch);
+      try {
+        await updateConnectorInCloud(authUser.uid, platform, patch);
+      } catch (err: unknown) {
+        setErrorMessage(err instanceof Error ? err.message : 'Failed to save connector.');
+      }
       void fetch(`/api/crm/connectors/${platform}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },

@@ -105,7 +105,7 @@ export function classifyMicrophoneError(err: unknown): {
     return {
       isPermissionOrMissing: true,
       notice:
-        'Microphone permission is blocked or denied in this browser/frame — Live Voice Speaker Mode is active. Send a message or scenario below to hear spoken AI replies with 3D hologram lip-sync.',
+        'Live Voice Speaker Mode active (microphone blocked in this frame or browser). Allow Microphone in site settings or open in a full browser tab and click Retry Mic — or send any message/scenario below for spoken AI replies.',
     };
   }
 
@@ -119,14 +119,14 @@ export function classifyMicrophoneError(err: unknown): {
     return {
       isPermissionOrMissing: true,
       notice:
-        'No microphone input detected — Live Voice Speaker Mode is active. Send a message or scenario below to hear spoken AI replies with 3D hologram lip-sync.',
+        'Live Voice Speaker Mode active (no microphone detected). Send any message or scenario below to hear spoken AI replies with 3D hologram lip-sync.',
     };
   }
 
   return {
     isPermissionOrMissing: false,
     notice:
-      'Microphone capture could not start — Live Voice Speaker Mode is active. Send a message or scenario below for spoken AI replies.',
+      'Live Voice Speaker Mode active (microphone unavailable). Send any message or scenario below for spoken AI replies.',
   };
 }
 

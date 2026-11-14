@@ -48,6 +48,32 @@ function toEpochMs(value: unknown): number {
   return 0;
 }
 
+const pendingTicketOps = new Map<string, Promise<void>>();
+const pendingTurnOps = new Map<string, Promise<void>>();
+
+function enqueueDocOp(
+  queueMap: Map<string, Promise<void>>,
+  key: string,
+  task: () => Promise<void>
+): Promise<void> {
+  const previous = queueMap.get(key) ?? Promise.resolve();
+  const next = previous.catch(() => undefined).then(task);
+  const cleanup = next.finally(() => {
+    if (queueMap.get(key) === cleanup) {
+      queueMap.delete(key);
+    }
+  });
+  queueMap.set(key, cleanup);
+  return next;
+}
+
+function isNotFoundError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const code = 'code' in error ? String((error as { code?: unknown }).code) : '';
+  const message = error instanceof Error ? error.message : String(error);
+  return code === 'not-found' || message.includes('No document to update');
+}
+
 function ticketFromDoc(data: Record<string, unknown>): CrmTicket {
   return {
     id: String(data.id || ''),
@@ -192,9 +218,15 @@ export async function ensureUserBootstrap(
     preferredLanguage: profileOverride?.preferredLanguage || 'auto',
   };
 
+  let snap;
   try {
-    const snap = await getDoc(profileRef);
-    if (!snap.exists()) {
+    snap = await getDoc(profileRef);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, profilePath);
+  }
+
+  if (!snap.exists()) {
+    try {
       const payload = buildUserProfileCreatePayload(
         uid,
         {
@@ -210,37 +242,45 @@ export async function ensureUserBootstrap(
         serverTimestamp()
       );
       await setDoc(profileRef, payload);
-    } else {
-      const data = snap.data() as Record<string, unknown>;
-      profileData = {
-        ownerId: uid,
-        displayName: String(data.displayName || profileData.displayName),
-        email: String(data.email || profileData.email),
-        company: typeof data.company === 'string' && data.company.length > 0 ? data.company : profileData.company,
-        photoURL: typeof data.photoURL === 'string' ? data.photoURL : undefined,
-        preferredLanguage:
-          typeof data.preferredLanguage === 'string' ? data.preferredLanguage : undefined,
-        activeTicketId:
-          typeof data.activeTicketId === 'string' && data.activeTicketId.length > 0
-            ? data.activeTicketId
-            : undefined,
-        activeLanguage:
-          typeof data.activeLanguage === 'string' && data.activeLanguage.length > 0
-            ? data.activeLanguage
-            : undefined,
-      };
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, profilePath);
     }
-  } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, profilePath);
+  } else {
+    const data = snap.data() as Record<string, unknown>;
+    profileData = {
+      ownerId: uid,
+      displayName: String(data.displayName || profileData.displayName),
+      email: String(data.email || profileData.email),
+      company:
+        typeof data.company === 'string' && data.company.length > 0
+          ? data.company
+          : profileData.company,
+      photoURL: typeof data.photoURL === 'string' ? data.photoURL : undefined,
+      preferredLanguage:
+        typeof data.preferredLanguage === 'string' ? data.preferredLanguage : undefined,
+      activeTicketId:
+        typeof data.activeTicketId === 'string' && data.activeTicketId.length > 0
+          ? data.activeTicketId
+          : undefined,
+      activeLanguage:
+        typeof data.activeLanguage === 'string' && data.activeLanguage.length > 0
+          ? data.activeLanguage
+          : undefined,
+    };
   }
 
   // Seed default rules if user has none yet
   const rulesPath = `users/${uid}/rules`;
+  let rulesSnap;
   try {
-    const rulesSnap = await getDocs(
+    rulesSnap = await getDocs(
       query(collection(db, 'users', uid, 'rules'), where('ownerId', '==', uid))
     );
-    if (rulesSnap.empty && defaults.rules.length > 0) {
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, rulesPath);
+  }
+  if (rulesSnap.empty && defaults.rules.length > 0) {
+    try {
       const batch = writeBatch(db);
       for (const rule of defaults.rules) {
         const ruleId = sanitizeDocId(rule.id, 'rule');
@@ -253,18 +293,23 @@ export async function ensureUserBootstrap(
         batch.set(doc(db, 'users', uid, 'rules', ruleId), payload);
       }
       await batch.commit();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, rulesPath);
     }
-  } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, rulesPath);
   }
 
   // Seed default connectors if user has none yet
   const connectorsPath = `users/${uid}/connectors`;
+  let connSnap;
   try {
-    const connSnap = await getDocs(
+    connSnap = await getDocs(
       query(collection(db, 'users', uid, 'connectors'), where('ownerId', '==', uid))
     );
-    if (connSnap.empty && defaults.connectors.length > 0) {
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, connectorsPath);
+  }
+  if (connSnap.empty && defaults.connectors.length > 0) {
+    try {
       const batch = writeBatch(db);
       for (const connector of defaults.connectors) {
         const payload = buildConnectorCreatePayload(
@@ -276,18 +321,23 @@ export async function ensureUserBootstrap(
         batch.set(doc(db, 'users', uid, 'connectors', connector.platform), payload);
       }
       await batch.commit();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, connectorsPath);
     }
-  } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, connectorsPath);
   }
 
   // Seed starter CRM tickets on first login so the queue reflects the workspace immediately
   const ticketsPath = `users/${uid}/tickets`;
+  let ticketSnap;
   try {
-    const ticketSnap = await getDocs(
+    ticketSnap = await getDocs(
       query(collection(db, 'users', uid, 'tickets'), where('ownerId', '==', uid))
     );
-    if (ticketSnap.empty && defaults.tickets.length > 0) {
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, ticketsPath);
+  }
+  if (ticketSnap.empty && defaults.tickets.length > 0) {
+    try {
       const batch = writeBatch(db);
       for (const ticket of defaults.tickets) {
         const ticketId = sanitizeDocId(ticket.id, 'tkt');
@@ -300,9 +350,9 @@ export async function ensureUserBootstrap(
         batch.set(doc(db, 'users', uid, 'tickets', ticketId), payload);
       }
       await batch.commit();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, ticketsPath);
     }
-  } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, ticketsPath);
   }
 
   return profileData;
@@ -438,15 +488,35 @@ export async function upsertTicketInCloud(
   const ticketId = sanitizeDocId(ticket.id, 'tkt');
   const path = `users/${uid}/tickets/${ticketId}`;
   const ref = doc(db, 'users', uid, 'tickets', ticketId);
-  try {
+
+  return enqueueDocOp(pendingTicketOps, `${uid}/${ticketId}`, async () => {
     if (knownExisting) {
-      await updateDoc(ref, buildTicketNluUpdatePayload(ticket, serverTimestamp()));
-    } else {
-      const snap = await getDoc(ref);
-      if (snap.exists()) {
-        if (snap.data()?.status === 'Resolved') return;
+      try {
         await updateDoc(ref, buildTicketNluUpdatePayload(ticket, serverTimestamp()));
-      } else {
+        return;
+      } catch (error) {
+        if (!isNotFoundError(error)) {
+          handleFirestoreError(error, OperationType.UPDATE, path);
+        }
+      }
+    }
+
+    let snap;
+    try {
+      snap = await getDoc(ref);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.GET, path);
+    }
+
+    if (snap.exists()) {
+      if (snap.data()?.status === 'Resolved') return;
+      try {
+        await updateDoc(ref, buildTicketNluUpdatePayload(ticket, serverTimestamp()));
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, path);
+      }
+    } else {
+      try {
         await setDoc(
           ref,
           buildTicketCreatePayload(
@@ -456,11 +526,11 @@ export async function upsertTicketInCloud(
             serverTimestamp()
           )
         );
+      } catch (error) {
+        handleFirestoreError(error, OperationType.CREATE, path);
       }
     }
-  } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, path);
-  }
+  });
 }
 
 export async function updateTicketManualInCloud(
@@ -516,21 +586,31 @@ export async function upsertTurnInCloud(
   const turnId = sanitizeDocId(turn.id, 'turn');
   const path = `users/${uid}/turns/${turnId}`;
   const ref = doc(db, 'users', uid, 'turns', turnId);
-  try {
+
+  return enqueueDocOp(pendingTurnOps, `${uid}/${turnId}`, async () => {
     if (isUpdate) {
-      await updateDoc(
-        ref,
-        buildTurnUpdatePayload(
-          {
-            text: turn.text,
-            latencyMs: turn.latencyMs,
-            language: turn.language,
-            nlu: turn.nlu,
-          },
-          serverTimestamp()
-        )
-      );
-    } else {
+      try {
+        await updateDoc(
+          ref,
+          buildTurnUpdatePayload(
+            {
+              text: turn.text,
+              latencyMs: turn.latencyMs,
+              language: turn.language,
+              nlu: turn.nlu,
+            },
+            serverTimestamp()
+          )
+        );
+        return;
+      } catch (error) {
+        if (!isNotFoundError(error)) {
+          handleFirestoreError(error, OperationType.UPDATE, path);
+        }
+      }
+    }
+
+    try {
       await setDoc(
         ref,
         buildTurnCreatePayload(
@@ -540,22 +620,25 @@ export async function upsertTurnInCloud(
           serverTimestamp()
         )
       );
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, path);
     }
-  } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, path);
-  }
+  });
 }
 
 export async function clearTurnsInCloud(uid: string, turnIds: string[]): Promise<void> {
   if (turnIds.length === 0) return;
   const path = `users/${uid}/turns`;
   try {
-    const batch = writeBatch(db);
-    for (const rawId of turnIds) {
-      const safeId = sanitizeDocId(rawId, 'turn');
-      batch.delete(doc(db, 'users', uid, 'turns', safeId));
+    for (let i = 0; i < turnIds.length; i += 400) {
+      const chunk = turnIds.slice(i, i + 400);
+      const batch = writeBatch(db);
+      for (const rawId of chunk) {
+        const safeId = sanitizeDocId(rawId, 'turn');
+        batch.delete(doc(db, 'users', uid, 'turns', safeId));
+      }
+      await batch.commit();
     }
-    await batch.commit();
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }

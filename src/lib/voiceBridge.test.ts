@@ -102,5 +102,5 @@ test('classifyMicrophoneError maps Permission denied and missing device to Speak
 
   const missing = classifyMicrophoneError(new Error('Requested device not found'));
   assert.equal(missing.isPermissionOrMissing, true);
-  assert.ok(missing.notice.includes('No microphone'));
+  assert.ok(missing.notice.toLowerCase().includes('no microphone'));
 });

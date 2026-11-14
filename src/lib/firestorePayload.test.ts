@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
 import {
   buildConnectorCreatePayload,
@@ -60,6 +62,78 @@ test('buildTicketCreatePayload truncates long summaries and tags and preserves c
   const nluUpdate = buildTicketNluUpdatePayload(sample, ts);
   assert.equal('ownerId' in nluUpdate, false);
   assert.equal('createdAt' in nluUpdate, false);
+});
+
+test('dynamic ticket create and NLU update payloads match exact firestore.rules allowlists', () => {
+  const ts = { _server: true };
+  const dynamicTicket = {
+    ...INITIAL_TICKETS[0],
+    id: 'tkt-mwgp1j77-16',
+    externalId: 'SF-500816',
+    customerEmail: '',
+    summary: '',
+    tags: [],
+    lastSyncedAt: '',
+  };
+
+  const createPayload = buildTicketCreatePayload('uid-abc', dynamicTicket, ts, ts);
+  const expectedCreateKeys = [
+    'ownerId',
+    'id',
+    'externalId',
+    'platform',
+    'customerName',
+    'company',
+    'customerEmail',
+    'slaTier',
+    'subject',
+    'intent',
+    'sentiment',
+    'sentimentScore',
+    'priority',
+    'zendeskPriority',
+    'slaMinutes',
+    'tags',
+    'status',
+    'syncStatus',
+    'lastSyncedAt',
+    'avgLatencyMs',
+    'summary',
+    'createdAtIso',
+    'createdAt',
+    'updatedAt',
+  ].sort();
+  assert.deepEqual(Object.keys(createPayload).sort(), expectedCreateKeys);
+  assert.ok(createPayload.lastSyncedAt.length > 0);
+  assert.equal(createPayload.id, 'tkt-mwgp1j77-16');
+
+  const updatePayload = buildTicketNluUpdatePayload(dynamicTicket, ts);
+  const expectedUpdateKeys = [
+    'subject',
+    'intent',
+    'sentiment',
+    'sentimentScore',
+    'priority',
+    'zendeskPriority',
+    'slaMinutes',
+    'tags',
+    'status',
+    'syncStatus',
+    'lastSyncedAt',
+    'avgLatencyMs',
+    'summary',
+    'updatedAt',
+  ].sort();
+  assert.deepEqual(Object.keys(updatePayload).sort(), expectedUpdateKeys);
+});
+
+test('firestore.rules allows getDoc checks when resource is null across all user subcollections', () => {
+  const rulesText = fs.readFileSync(path.resolve(process.cwd(), 'firestore.rules'), 'utf8');
+  const getMatches = rulesText.match(/allow get:[^\n]+/g) ?? [];
+  assert.equal(getMatches.length, 5);
+  for (const ruleLine of getMatches) {
+    assert.match(ruleLine, /resource == null \|\| existing\(\)\.ownerId == request\.auth\.uid/);
+  }
 });
 
 test('buildTurnCreatePayload omits undefined optional properties and strips excess nlu keys', () => {

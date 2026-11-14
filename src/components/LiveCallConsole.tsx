@@ -12,6 +12,7 @@ import {
   Globe,
   Volume2,
   VolumeX,
+  ExternalLink,
 } from 'lucide-react';
 import type {
   CallerScenario,
@@ -448,12 +449,23 @@ export function LiveCallConsole({
                   </span>
                 </div>
                 {voiceNotice && isVoiceConnected && (
-                  <p
+                  <div
                     data-testid="voice-bridge-notice"
-                    className="text-[11px] text-slate-300 bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5"
+                    className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-300 bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5"
                   >
-                    {voiceNotice}
-                  </p>
+                    <span className="flex-1 min-w-[200px]">{voiceNotice}</span>
+                    {isMicUnavailable && typeof window !== 'undefined' && window.self !== window.top && (
+                      <a
+                        href={window.location.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-sky-300 hover:text-sky-200 font-medium underline underline-offset-2 whitespace-nowrap shrink-0"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                        Open Full Tab
+                      </a>
+                    )}
+                  </div>
                 )}
                 <VoiceWaveform
                   variant="dark"

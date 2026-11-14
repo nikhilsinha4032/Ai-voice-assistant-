@@ -70,6 +70,56 @@ export function computeRmsAmplitude(samples: Float32Array): number {
   return Math.min(1, Math.sqrt(sumSq / samples.length) * 3.5);
 }
 
+export function createAudioContextSafe(preferredSampleRate: number): AudioContext {
+  const AudioCtx =
+    window.AudioContext ||
+    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  try {
+    return new AudioCtx({ sampleRate: preferredSampleRate });
+  } catch {
+    return new AudioCtx();
+  }
+}
+
+export async function requestMicrophoneStream(): Promise<MediaStream> {
+  if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+    throw new Error('mediaDevices unavailable');
+  }
+
+  try {
+    return await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+  } catch (firstErr) {
+    const name = firstErr instanceof Error ? firstErr.name : '';
+    if (name === 'NotAllowedError' || name === 'SecurityError') {
+      throw firstErr;
+    }
+    try {
+      return await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (secondErr) {
+      const secondName = secondErr instanceof Error ? secondErr.name : '';
+      if (secondName === 'NotAllowedError' || secondName === 'SecurityError') {
+        throw secondErr;
+      }
+      if (typeof navigator.mediaDevices.enumerateDevices === 'function') {
+        const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+        const audioInput = devices.find((d) => d.kind === 'audioinput' && d.deviceId);
+        if (audioInput) {
+          return await navigator.mediaDevices.getUserMedia({
+            audio: { deviceId: { ideal: audioInput.deviceId } },
+          });
+        }
+      }
+      throw secondErr;
+    }
+  }
+}
+
 export class AudioPlaybackScheduler {
   private ctx: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
@@ -79,7 +129,7 @@ export class AudioPlaybackScheduler {
 
   public ensureContext(): AudioContext {
     if (!this.ctx) {
-      this.ctx = new AudioContext({ sampleRate: 24000 });
+      this.ctx = createAudioContextSafe(24000);
       this.analyser = this.ctx.createAnalyser();
       this.analyser.fftSize = 256;
       this.analyserData = new Float32Array(new ArrayBuffer(this.analyser.fftSize * 4));

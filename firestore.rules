@@ -286,7 +286,7 @@ service cloud.firestore {
 
     // 1. Private User Profile & Session State
     match /users/{userId}/private/{docId} {
-      allow get: if isOwner(userId) && isValidId(docId);
+      allow get: if isOwner(userId) && isValidId(docId) && (resource == null || existing().ownerId == request.auth.uid);
       allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
       allow create: if isOwner(userId)
         && isValidId(docId)
@@ -309,7 +309,7 @@ service cloud.firestore {
 
     // 2. Customer CRM Tickets
     match /users/{userId}/tickets/{ticketId} {
-      allow get: if isOwner(userId) && isValidId(ticketId) && existing().ownerId == request.auth.uid;
+      allow get: if isOwner(userId) && isValidId(ticketId) && (resource == null || existing().ownerId == request.auth.uid);
       allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
       allow create: if isOwner(userId)
         && isValidId(ticketId)
@@ -361,7 +361,7 @@ service cloud.firestore {
 
     // 3. Conversation Transcript Turns
     match /users/{userId}/turns/{turnId} {
-      allow get: if isOwner(userId) && isValidId(turnId) && existing().ownerId == request.auth.uid;
+      allow get: if isOwner(userId) && isValidId(turnId) && (resource == null || existing().ownerId == request.auth.uid);
       allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
       allow create: if isOwner(userId)
         && isValidId(turnId)
@@ -387,7 +387,7 @@ service cloud.firestore {
 
     // 4. Customer Triage Rules
     match /users/{userId}/rules/{ruleId} {
-      allow get: if isOwner(userId) && isValidId(ruleId) && existing().ownerId == request.auth.uid;
+      allow get: if isOwner(userId) && isValidId(ruleId) && (resource == null || existing().ownerId == request.auth.uid);
       allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
       allow create: if isOwner(userId)
         && isValidId(ruleId)
@@ -418,7 +418,7 @@ service cloud.firestore {
 
     // 5. Customer CRM Connector Settings
     match /users/{userId}/connectors/{platform} {
-      allow get: if isOwner(userId) && isValidId(platform) && existing().ownerId == request.auth.uid;
+      allow get: if isOwner(userId) && isValidId(platform) && (resource == null || existing().ownerId == request.auth.uid);
       allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
       allow create: if isOwner(userId)
         && isValidId(platform)
