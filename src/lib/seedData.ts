@@ -221,4 +221,15 @@ export const CALLER_SCENARIOS: CallerScenario[] = [
     utterance:
       'Your voice triage rollout cut our handle times by 35% this quarter! We want to add 80 more support seats ahead of our December renewal.',
   },
+  {
+    id: 'scen-hindi',
+    title: 'Hindi API Escalation',
+    customerName: 'Rohan Sharma',
+    company: 'BharatPay Systems',
+    customerEmail: 'rsharma@bharatpay.in',
+    slaTier: 'Enterprise',
+    targetPlatform: 'salesforce',
+    utterance:
+      'नमस्ते, हमारे प्रोडक्शन पेमेंट API में सुबह से 502 एरर आ रहा है और ग्राहकों के ऑर्डर फेल हो रहे हैं। कृपया इसे तुरंत ठीक करवाएं।',
+  },
 ];

@@ -22,16 +22,19 @@ export interface NluAnalysis {
   urgencySignals: string[];
   entities: ExtractedEntity[];
   summary: string;
+  language?: string;
 }
 
 export interface TranscriptTurn {
   id: string;
-  speaker: 'caller' | 'agent';
+  speaker: 'caller' | 'agent' | 'system';
   text: string;
   timestamp: string;
   latencyMs?: number;
   nlu?: NluAnalysis;
   channel: 'voice' | 'text';
+  language?: string;
+  previousLanguage?: string;
 }
 
 export interface TriageRule {

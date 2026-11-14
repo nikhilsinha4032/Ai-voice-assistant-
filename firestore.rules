@@ -1,0 +1,453 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Core hardened primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedEmail() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isVerifiedEmail() && request.auth.uid == userId;
+    }
+
+    // Entity validation helpers matching firebase-blueprint.json
+
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['ownerId', 'displayName', 'email', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly([
+          'ownerId',
+          'displayName',
+          'email',
+          'company',
+          'photoURL',
+          'preferredLanguage',
+          'activeTicketId',
+          'activeLanguage',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128
+        && data.ownerId == userId
+        && data.ownerId == request.auth.uid
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120
+        && data.email is string && data.email.size() >= 1 && data.email.size() <= 180
+        && (!('company' in data) || (data.company is string && data.company.size() <= 120))
+        && (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 512))
+        && (!('preferredLanguage' in data) || (data.preferredLanguage is string && data.preferredLanguage.size() <= 40))
+        && (!('activeTicketId' in data) || (data.activeTicketId is string && data.activeTicketId.size() <= 128 && (data.activeTicketId == '' || isValidId(data.activeTicketId))))
+        && (!('activeLanguage' in data) || (data.activeLanguage is string && data.activeLanguage.size() <= 40))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCrmTicket(data, userId, ticketId) {
+      return data.keys().hasAll([
+        'ownerId',
+        'id',
+        'externalId',
+        'platform',
+        'customerName',
+        'company',
+        'customerEmail',
+        'slaTier',
+        'subject',
+        'intent',
+        'sentiment',
+        'sentimentScore',
+        'priority',
+        'zendeskPriority',
+        'slaMinutes',
+        'tags',
+        'status',
+        'syncStatus',
+        'lastSyncedAt',
+        'avgLatencyMs',
+        'summary',
+        'createdAtIso',
+        'createdAt',
+        'updatedAt'
+      ])
+        && data.keys().hasOnly([
+          'ownerId',
+          'id',
+          'externalId',
+          'platform',
+          'customerName',
+          'company',
+          'customerEmail',
+          'slaTier',
+          'subject',
+          'intent',
+          'sentiment',
+          'sentimentScore',
+          'priority',
+          'zendeskPriority',
+          'slaMinutes',
+          'tags',
+          'status',
+          'syncStatus',
+          'lastSyncedAt',
+          'avgLatencyMs',
+          'summary',
+          'createdAtIso',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128
+        && data.ownerId == userId
+        && data.ownerId == request.auth.uid
+        && isValidId(data.id)
+        && data.id == ticketId
+        && data.externalId is string && data.externalId.size() >= 1 && data.externalId.size() <= 40
+        && data.platform in ['salesforce', 'zendesk']
+        && data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 120
+        && data.company is string && data.company.size() >= 1 && data.company.size() <= 120
+        && data.customerEmail is string && data.customerEmail.size() <= 180
+        && data.slaTier in ['Enterprise', 'Growth', 'Standard']
+        && data.subject is string && data.subject.size() >= 1 && data.subject.size() <= 240
+        && data.intent is string && data.intent.size() >= 1 && data.intent.size() <= 80
+        && data.sentiment in ['Positive', 'Neutral', 'Mixed', 'Negative']
+        && data.sentimentScore is number && data.sentimentScore >= -1.0 && data.sentimentScore <= 1.0
+        && data.priority in ['P1', 'P2', 'P3', 'P4']
+        && data.zendeskPriority in ['urgent', 'high', 'normal', 'low']
+        && data.slaMinutes is number && data.slaMinutes >= 1 && data.slaMinutes <= 10080
+        && data.tags is list && data.tags.size() <= 25
+        && (data.tags.size() == 0 || (data.tags[0] is string && data.tags[0].size() <= 80))
+        && data.status in ['New', 'In Progress', 'Escalated', 'Resolved']
+        && data.syncStatus in ['Synced', 'Pending', 'Failed']
+        && data.lastSyncedAt is string && data.lastSyncedAt.size() <= 64
+        && data.avgLatencyMs is number && data.avgLatencyMs >= 0 && data.avgLatencyMs <= 600000
+        && data.summary is string && data.summary.size() <= 1000
+        && data.createdAtIso is string && data.createdAtIso.size() <= 64
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidTranscriptTurn(data, userId, turnId) {
+      return data.keys().hasAll([
+        'ownerId',
+        'id',
+        'speaker',
+        'text',
+        'timestamp',
+        'channel',
+        'createdAt',
+        'updatedAt'
+      ])
+        && data.keys().hasOnly([
+          'ownerId',
+          'id',
+          'speaker',
+          'text',
+          'timestamp',
+          'channel',
+          'latencyMs',
+          'language',
+          'previousLanguage',
+          'nlu',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128
+        && data.ownerId == userId
+        && data.ownerId == request.auth.uid
+        && isValidId(data.id)
+        && data.id == turnId
+        && data.speaker in ['caller', 'agent', 'system']
+        && data.text is string && data.text.size() >= 1 && data.text.size() <= 4000
+        && data.timestamp is string && data.timestamp.size() <= 32
+        && data.channel in ['voice', 'text']
+        && (!('latencyMs' in data) || (data.latencyMs is number && data.latencyMs >= 0 && data.latencyMs <= 600000))
+        && (!('language' in data) || (data.language is string && data.language.size() <= 40))
+        && (!('previousLanguage' in data) || (data.previousLanguage is string && data.previousLanguage.size() <= 40))
+        && (!('nlu' in data) || (data.nlu is map && data.nlu.keys().size() <= 12))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidTriageRule(data, userId, ruleId) {
+      return data.keys().hasAll([
+        'ownerId',
+        'id',
+        'name',
+        'description',
+        'enabled',
+        'maxSentimentScore',
+        'intents',
+        'assignPriority',
+        'slaMinutes',
+        'autoTags',
+        'escalateToTier2',
+        'createdAt',
+        'updatedAt'
+      ])
+        && data.keys().hasOnly([
+          'ownerId',
+          'id',
+          'name',
+          'description',
+          'enabled',
+          'maxSentimentScore',
+          'intents',
+          'assignPriority',
+          'slaMinutes',
+          'autoTags',
+          'escalateToTier2',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128
+        && data.ownerId == userId
+        && data.ownerId == request.auth.uid
+        && isValidId(data.id)
+        && data.id == ruleId
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.description is string && data.description.size() <= 400
+        && data.enabled is bool
+        && data.maxSentimentScore is number && data.maxSentimentScore >= -1.0 && data.maxSentimentScore <= 1.0
+        && data.intents is list && data.intents.size() <= 20
+        && (data.intents.size() == 0 || (data.intents[0] is string && data.intents[0].size() <= 80))
+        && data.assignPriority in ['P1', 'P2', 'P3', 'P4']
+        && data.slaMinutes is number && data.slaMinutes >= 1 && data.slaMinutes <= 10080
+        && data.autoTags is list && data.autoTags.size() <= 20
+        && (data.autoTags.size() == 0 || (data.autoTags[0] is string && data.autoTags[0].size() <= 80))
+        && data.escalateToTier2 is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCrmConnectorConfig(data, userId, platform) {
+      return data.keys().hasAll([
+        'ownerId',
+        'platform',
+        'displayName',
+        'connected',
+        'instanceUrl',
+        'apiVersion',
+        'autoSync',
+        'defaultQueue',
+        'lastSyncAt',
+        'ticketsSyncedCount',
+        'createdAt',
+        'updatedAt'
+      ])
+        && data.keys().hasOnly([
+          'ownerId',
+          'platform',
+          'displayName',
+          'connected',
+          'instanceUrl',
+          'apiVersion',
+          'autoSync',
+          'defaultQueue',
+          'lastSyncAt',
+          'ticketsSyncedCount',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128
+        && data.ownerId == userId
+        && data.ownerId == request.auth.uid
+        && data.platform in ['salesforce', 'zendesk']
+        && data.platform == platform
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120
+        && data.connected is bool
+        && data.instanceUrl is string && data.instanceUrl.size() <= 256
+        && data.apiVersion is string && data.apiVersion.size() <= 32
+        && data.autoSync is bool
+        && data.defaultQueue is string && data.defaultQueue.size() <= 120
+        && data.lastSyncAt is string && data.lastSyncAt.size() <= 64
+        && data.ticketsSyncedCount is number && data.ticketsSyncedCount >= 0 && data.ticketsSyncedCount <= 100000000
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // 1. Private User Profile & Session State
+    match /users/{userId}/private/{docId} {
+      allow get: if isOwner(userId) && isValidId(docId);
+      allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+      allow create: if isOwner(userId)
+        && isValidId(docId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isOwner(userId)
+        && isValidId(docId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'company', 'photoURL', 'updatedAt'])
+          || incoming().diff(existing()).affectedKeys().hasOnly(['preferredLanguage', 'activeTicketId', 'activeLanguage', 'updatedAt'])
+          || incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'company', 'photoURL', 'preferredLanguage', 'activeTicketId', 'activeLanguage', 'updatedAt'])
+        );
+      allow delete: if false;
+    }
+
+    // 2. Customer CRM Tickets
+    match /users/{userId}/tickets/{ticketId} {
+      allow get: if isOwner(userId) && isValidId(ticketId) && existing().ownerId == request.auth.uid;
+      allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+      allow create: if isOwner(userId)
+        && isValidId(ticketId)
+        && isValidCrmTicket(incoming(), userId, ticketId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isOwner(userId)
+        && isValidId(ticketId)
+        && isValidCrmTicket(incoming(), userId, ticketId)
+        && incoming().ownerId == existing().ownerId
+        && incoming().id == existing().id
+        && incoming().externalId == existing().externalId
+        && incoming().platform == existing().platform
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && existing().status != 'Resolved'
+        && (
+          // Action: Manual Queue Edit (priority / status / tags)
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'status', 'priority', 'zendeskPriority', 'slaMinutes', 'tags', 'updatedAt'
+          ])
+          // Action: Manual CRM Sync
+          || incoming().diff(existing()).affectedKeys().hasOnly([
+            'syncStatus', 'lastSyncedAt', 'updatedAt'
+          ])
+          // Action: Live Voice / Text NLU Re-triage Update
+          || incoming().diff(existing()).affectedKeys().hasOnly([
+            'subject',
+            'intent',
+            'sentiment',
+            'sentimentScore',
+            'priority',
+            'zendeskPriority',
+            'slaMinutes',
+            'tags',
+            'status',
+            'syncStatus',
+            'lastSyncedAt',
+            'avgLatencyMs',
+            'summary',
+            'updatedAt'
+          ])
+        );
+      allow delete: if isOwner(userId)
+        && isValidId(ticketId)
+        && existing().ownerId == request.auth.uid
+        && existing().status != 'Resolved';
+    }
+
+    // 3. Conversation Transcript Turns
+    match /users/{userId}/turns/{turnId} {
+      allow get: if isOwner(userId) && isValidId(turnId) && existing().ownerId == request.auth.uid;
+      allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+      allow create: if isOwner(userId)
+        && isValidId(turnId)
+        && isValidTranscriptTurn(incoming(), userId, turnId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isOwner(userId)
+        && isValidId(turnId)
+        && isValidTranscriptTurn(incoming(), userId, turnId)
+        && incoming().ownerId == existing().ownerId
+        && incoming().id == existing().id
+        && incoming().speaker == existing().speaker
+        && incoming().channel == existing().channel
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          incoming().diff(existing()).affectedKeys().hasOnly(['text', 'latencyMs', 'language', 'nlu', 'updatedAt'])
+        );
+      allow delete: if isOwner(userId)
+        && isValidId(turnId)
+        && existing().ownerId == request.auth.uid;
+    }
+
+    // 4. Customer Triage Rules
+    match /users/{userId}/rules/{ruleId} {
+      allow get: if isOwner(userId) && isValidId(ruleId) && existing().ownerId == request.auth.uid;
+      allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+      allow create: if isOwner(userId)
+        && isValidId(ruleId)
+        && isValidTriageRule(incoming(), userId, ruleId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isOwner(userId)
+        && isValidId(ruleId)
+        && isValidTriageRule(incoming(), userId, ruleId)
+        && incoming().ownerId == existing().ownerId
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'enabled',
+            'assignPriority',
+            'maxSentimentScore',
+            'slaMinutes',
+            'escalateToTier2',
+            'intents',
+            'autoTags',
+            'updatedAt'
+          ])
+        );
+      allow delete: if false;
+    }
+
+    // 5. Customer CRM Connector Settings
+    match /users/{userId}/connectors/{platform} {
+      allow get: if isOwner(userId) && isValidId(platform) && existing().ownerId == request.auth.uid;
+      allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+      allow create: if isOwner(userId)
+        && isValidId(platform)
+        && isValidCrmConnectorConfig(incoming(), userId, platform)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isOwner(userId)
+        && isValidId(platform)
+        && isValidCrmConnectorConfig(incoming(), userId, platform)
+        && incoming().ownerId == existing().ownerId
+        && incoming().platform == existing().platform
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'connected',
+            'instanceUrl',
+            'autoSync',
+            'defaultQueue',
+            'lastSyncAt',
+            'updatedAt'
+          ])
+          || incoming().diff(existing()).affectedKeys().hasOnly([
+            'lastSyncAt',
+            'ticketsSyncedCount',
+            'updatedAt'
+          ])
+        );
+      allow delete: if false;
+    }
+  }
+}

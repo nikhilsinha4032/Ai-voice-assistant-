@@ -101,20 +101,20 @@ export function TicketQueueView({
   return (
     <div className="space-y-5">
       {/* Filter Toolbar */}
-      <div className="bg-white border border-slate-200 rounded-lg p-4 flex flex-wrap items-center justify-between gap-4">
+      <div className="bg-white border border-slate-200/90 rounded-xl shadow-[0_1px_2px_rgba(15,23,42,0.04)] p-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-3">
           {/* Platform segmented buttons */}
           <div
             role="group"
             aria-label="Filter by CRM platform"
-            className="flex items-center gap-1 p-1 bg-slate-100 rounded-md"
+            className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg"
           >
             {(['all', 'salesforce', 'zendesk'] as const).map((plat) => (
               <button
                 key={plat}
                 type="button"
                 onClick={() => setFilters((f) => ({ ...f, platform: plat }))}
-                className={`px-3 py-1.5 text-xs font-medium rounded transition-colors whitespace-nowrap shrink-0 ${
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
                   filters.platform === plat
                     ? 'bg-white text-slate-900 shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
@@ -139,7 +139,7 @@ export function TicketQueueView({
                   priority: e.target.value as TicketFilters['priority'],
                 }))
               }
-              className="px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-md text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+              className="px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
             >
               <option value="all">All Priorities</option>
               <option value="P1">P1 Critical</option>
@@ -163,7 +163,7 @@ export function TicketQueueView({
                   sentiment: e.target.value as TicketFilters['sentiment'],
                 }))
               }
-              className="px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-md text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+              className="px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
             >
               <option value="all">All Sentiments</option>
               <option value="Negative">Negative</option>
@@ -183,13 +183,13 @@ export function TicketQueueView({
             placeholder="Search ID, account, tag..."
             value={filters.search}
             onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
-            className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-md text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-600"
+            className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-600"
           />
         </div>
       </div>
 
       {/* High-density CRM Ticket Table */}
-      <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+      <div className="bg-white border border-slate-200/90 rounded-xl shadow-[0_1px_2px_rgba(15,23,42,0.04)] overflow-hidden">
         {visibleTickets.length === 0 ? (
           <div className="py-14 px-6 text-center">
             <p className="text-sm font-medium text-slate-900">
@@ -318,8 +318,8 @@ export function TicketQueueView({
               <button
                 type="button"
                 onClick={() => handleSync(selectedTicket.id)}
-                disabled={isSyncingId === selectedTicket.id}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors whitespace-nowrap shrink-0"
+                disabled={isSyncingId === selectedTicket.id || selectedTicket.status === 'Resolved'}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors whitespace-nowrap shrink-0"
               >
                 <RefreshCw
                   className={`h-3.5 w-3.5 ${
@@ -339,6 +339,12 @@ export function TicketQueueView({
             </div>
           </div>
 
+          {selectedTicket.status === 'Resolved' && (
+            <div className="px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-md text-xs text-slate-600">
+              This ticket is <span className="font-semibold text-slate-900">Resolved</span> and locked for CRM audit compliance.
+            </div>
+          )}
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="space-y-4">
               <div>
@@ -357,12 +363,13 @@ export function TicketQueueView({
                   <select
                     id="detail-priority"
                     value={selectedTicket.priority}
+                    disabled={selectedTicket.status === 'Resolved'}
                     onChange={(e) =>
                       onUpdateTicket(selectedTicket.id, {
                         priority: e.target.value as PriorityLevel,
                       })
                     }
-                    className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-md text-slate-900"
+                    className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-md text-slate-900 disabled:opacity-60"
                   >
                     <option value="P1">P1 — Critical / Urgent</option>
                     <option value="P2">P2 — High</option>
@@ -380,12 +387,13 @@ export function TicketQueueView({
                   <select
                     id="detail-status"
                     value={selectedTicket.status}
+                    disabled={selectedTicket.status === 'Resolved'}
                     onChange={(e) =>
                       onUpdateTicket(selectedTicket.id, {
                         status: e.target.value as CrmTicket['status'],
                       })
                     }
-                    className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-md text-slate-900"
+                    className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-md text-slate-900 disabled:opacity-60"
                   >
                     <option value="New">New</option>
                     <option value="In Progress">In Progress</option>
@@ -403,34 +411,38 @@ export function TicketQueueView({
                   {selectedTicket.tags.map((tag) => (
                     <span key={tag} className="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-sm">
                       {tag}
-                      <button
-                        type="button"
-                        aria-label={`Remove tag ${tag}`}
-                        onClick={() => handleRemoveTag(tag)}
-                        className="text-slate-400 hover:text-red-600"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
+                      {selectedTicket.status !== 'Resolved' && (
+                        <button
+                          type="button"
+                          aria-label={`Remove tag ${tag}`}
+                          onClick={() => handleRemoveTag(tag)}
+                          className="text-slate-400 hover:text-red-600"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      )}
                     </span>
                   ))}
                 </div>
-                <form onSubmit={handleAddTag} className="mt-2.5 flex items-center gap-2">
-                  <input
-                    type="text"
-                    aria-label="Add custom CRM tag"
-                    placeholder="Add tag (e.g. vip-escalation)"
-                    value={newTagInput}
-                    onChange={(e) => setNewTagInput(e.target.value)}
-                    className="flex-1 px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-md text-slate-900"
-                  />
-                  <button
-                    type="submit"
-                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-md"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Add Tag
-                  </button>
-                </form>
+                {selectedTicket.status !== 'Resolved' && (
+                  <form onSubmit={handleAddTag} className="mt-2.5 flex items-center gap-2">
+                    <input
+                      type="text"
+                      aria-label="Add custom CRM tag"
+                      placeholder="Add tag (e.g. vip-escalation)"
+                      value={newTagInput}
+                      onChange={(e) => setNewTagInput(e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-md text-slate-900"
+                    />
+                    <button
+                      type="submit"
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-md"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Add Tag
+                    </button>
+                  </form>
+                )}
               </div>
             </div>
 

@@ -1,0 +1,189 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Private authenticated customer profile and active session preferences.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "email": { "type": "string", "format": "email", "maxLength": 180 },
+        "company": { "type": "string", "maxLength": 120 },
+        "photoURL": { "type": "string", "maxLength": 512 },
+        "preferredLanguage": { "type": "string", "maxLength": 40 },
+        "activeTicketId": { "type": "string", "maxLength": 128 },
+        "activeLanguage": { "type": "string", "maxLength": 40 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "displayName", "email", "createdAt", "updatedAt"]
+    },
+    "CrmTicket": {
+      "title": "CrmTicket",
+      "description": "Customer support CRM ticket synced to Salesforce or Zendesk.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "externalId": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "platform": { "type": "string", "enum": ["salesforce", "zendesk"] },
+        "customerName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "company": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "customerEmail": { "type": "string", "maxLength": 180 },
+        "slaTier": { "type": "string", "enum": ["Enterprise", "Growth", "Standard"] },
+        "subject": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "intent": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "sentiment": { "type": "string", "enum": ["Positive", "Neutral", "Mixed", "Negative"] },
+        "sentimentScore": { "type": "number" },
+        "priority": { "type": "string", "enum": ["P1", "P2", "P3", "P4"] },
+        "zendeskPriority": { "type": "string", "enum": ["urgent", "high", "normal", "low"] },
+        "slaMinutes": { "type": "number" },
+        "tags": { "type": "array", "maxLength": 25 },
+        "status": { "type": "string", "enum": ["New", "In Progress", "Escalated", "Resolved"] },
+        "syncStatus": { "type": "string", "enum": ["Synced", "Pending", "Failed"] },
+        "lastSyncedAt": { "type": "string", "maxLength": 64 },
+        "avgLatencyMs": { "type": "number" },
+        "summary": { "type": "string", "maxLength": 1000 },
+        "createdAtIso": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "ownerId",
+        "id",
+        "externalId",
+        "platform",
+        "customerName",
+        "company",
+        "customerEmail",
+        "slaTier",
+        "subject",
+        "intent",
+        "sentiment",
+        "sentimentScore",
+        "priority",
+        "zendeskPriority",
+        "slaMinutes",
+        "tags",
+        "status",
+        "syncStatus",
+        "lastSyncedAt",
+        "avgLatencyMs",
+        "summary",
+        "createdAtIso",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "TranscriptTurn": {
+      "title": "TranscriptTurn",
+      "description": "Persisted voice or text turn or language transition notice in a customer session.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "speaker": { "type": "string", "enum": ["caller", "agent", "system"] },
+        "text": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "timestamp": { "type": "string", "maxLength": 32 },
+        "channel": { "type": "string", "enum": ["voice", "text"] },
+        "latencyMs": { "type": "number" },
+        "language": { "type": "string", "maxLength": 40 },
+        "previousLanguage": { "type": "string", "maxLength": 40 },
+        "nlu": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "id", "speaker", "text", "timestamp", "channel", "createdAt", "updatedAt"]
+    },
+    "TriageRule": {
+      "title": "TriageRule",
+      "description": "Customer-configured CRM priority triage rule.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 400 },
+        "enabled": { "type": "boolean" },
+        "maxSentimentScore": { "type": "number" },
+        "intents": { "type": "array", "maxLength": 20 },
+        "assignPriority": { "type": "string", "enum": ["P1", "P2", "P3", "P4"] },
+        "slaMinutes": { "type": "number" },
+        "autoTags": { "type": "array", "maxLength": 20 },
+        "escalateToTier2": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "ownerId",
+        "id",
+        "name",
+        "description",
+        "enabled",
+        "maxSentimentScore",
+        "intents",
+        "assignPriority",
+        "slaMinutes",
+        "autoTags",
+        "escalateToTier2",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CrmConnectorConfig": {
+      "title": "CrmConnectorConfig",
+      "description": "Customer-configured Salesforce or Zendesk connector settings.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "platform": { "type": "string", "enum": ["salesforce", "zendesk"] },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "connected": { "type": "boolean" },
+        "instanceUrl": { "type": "string", "maxLength": 256 },
+        "apiVersion": { "type": "string", "maxLength": 32 },
+        "autoSync": { "type": "boolean" },
+        "defaultQueue": { "type": "string", "maxLength": 120 },
+        "lastSyncAt": { "type": "string", "maxLength": 64 },
+        "ticketsSyncedCount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "ownerId",
+        "platform",
+        "displayName",
+        "connected",
+        "instanceUrl",
+        "apiVersion",
+        "autoSync",
+        "defaultQueue",
+        "lastSyncAt",
+        "ticketsSyncedCount",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/private/{docId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private customer profile and active session state owned strictly by userId."
+    },
+    "/users/{userId}/tickets/{ticketId}": {
+      "schema": { "$ref": "#/entities/CrmTicket" },
+      "description": "Persisted CRM tickets belonging to the authenticated customer."
+    },
+    "/users/{userId}/turns/{turnId}": {
+      "schema": { "$ref": "#/entities/TranscriptTurn" },
+      "description": "Persisted voice/text conversation transcript turns for the authenticated customer."
+    },
+    "/users/{userId}/rules/{ruleId}": {
+      "schema": { "$ref": "#/entities/TriageRule" },
+      "description": "Persisted triage rules belonging to the authenticated customer."
+    },
+    "/users/{userId}/connectors/{platform}": {
+      "schema": { "$ref": "#/entities/CrmConnectorConfig" },
+      "description": "Persisted CRM connector settings belonging to the authenticated customer."
+    }
+  }
+}

@@ -25,7 +25,7 @@ export function TriageRulesView({ rules, onSaveRule }: TriageRulesViewProps) {
 
   return (
     <div className="space-y-6">
-      <div className="bg-white border border-slate-200 rounded-lg p-5">
+      <div className="bg-white border border-slate-200/90 rounded-xl shadow-[0_1px_2px_rgba(15,23,42,0.04)] p-5">
         <h2 className="text-base font-semibold text-slate-900">
           Automated Priority Triage & CRM Tagging Rules
         </h2>
@@ -38,7 +38,7 @@ export function TriageRulesView({ rules, onSaveRule }: TriageRulesViewProps) {
         {rules.map((rule) => (
           <section
             key={rule.id}
-            className="bg-white border border-slate-200 rounded-lg p-5 space-y-4"
+            className="bg-white border border-slate-200/90 rounded-xl shadow-[0_1px_2px_rgba(15,23,42,0.04)] p-5 space-y-4"
           >
             <div className="flex items-start justify-between gap-4">
               <div>

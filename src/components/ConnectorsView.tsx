@@ -64,7 +64,7 @@ export function ConnectorsView({ connectors, onSaveConnector }: ConnectorsViewPr
         {connectors.map((connector) => (
           <section
             key={connector.platform}
-            className="bg-white border border-slate-200 rounded-lg p-6 space-y-5"
+            className="bg-white border border-slate-200/90 rounded-xl shadow-[0_1px_2px_rgba(15,23,42,0.04)] p-6 space-y-5"
           >
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -171,7 +171,7 @@ export function ConnectorsView({ connectors, onSaveConnector }: ConnectorsViewPr
       </div>
 
       {/* Unified Field Mapping Reference */}
-      <section className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+      <section className="bg-white border border-slate-200/90 rounded-xl shadow-[0_1px_2px_rgba(15,23,42,0.04)] overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-200">
           <h3 className="text-sm font-semibold text-slate-900">
             Unified NLU-to-CRM Schema Mapping

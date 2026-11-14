@@ -9,6 +9,9 @@ import {
   Code2,
   ChevronRight,
   AlertCircle,
+  Globe,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import type {
   CallerScenario,
@@ -19,26 +22,38 @@ import type {
   VoicePersona,
 } from '../types/support';
 import { CALLER_SCENARIOS } from '../lib/seedData';
+import { SUPPORTED_LANGUAGES } from '../lib/language';
 import {
   buildSalesforceCasePayload,
   buildZendeskTicketPayload,
   calculateRollingMetrics,
 } from '../lib/triage';
 import { VoiceWaveform } from './VoiceWaveform';
+import { HologramAvatar3D } from './HologramAvatar3D';
 
 interface LiveCallConsoleProps {
   isVoiceConnected: boolean;
+  voiceMode?: 'live' | 'bridge' | 'speaker' | null;
+  voiceNotice?: string | null;
   isMicMuted: boolean;
+  isMicUnavailable?: boolean;
+  isVoiceOutputEnabled: boolean;
+  onToggleVoiceOutput: () => void;
   isAgentSpeaking: boolean;
   audioAmplitude: number;
   voicePersona: VoicePersona;
   onVoicePersonaChange: (voice: VoicePersona) => void;
+  selectedLanguage: string;
+  activeLanguage: string | null;
+  switchPending: boolean;
+  onLanguageChange: (language: string) => void;
   onStartVoice: (context: {
     customerName: string;
     company: string;
     customerEmail: string;
     slaTier: 'Enterprise' | 'Growth' | 'Standard';
     platform: CrmPlatform;
+    language?: string;
   }) => void;
   onStopVoice: () => void;
   onToggleMute: () => void;
@@ -54,10 +69,17 @@ interface LiveCallConsoleProps {
     customerEmail: string;
     slaTier: 'Enterprise' | 'Growth' | 'Standard';
     targetPlatform: CrmPlatform;
+    resetLock?: boolean;
   }) => Promise<void>;
   onResetSession: () => void;
   onSyncTicket: (ticketId: string) => Promise<void>;
   onOpenTicketQueue: () => void;
+  signedInUser?: {
+    displayName: string;
+    email: string;
+    company?: string;
+    targetPlatform?: CrmPlatform;
+  } | null;
 }
 
 function sentimentColorClass(sentiment: NluAnalysis['sentiment'] | undefined): string {
@@ -76,11 +98,20 @@ function priorityColorClass(priority: CrmTicket['priority']): string {
 
 export function LiveCallConsole({
   isVoiceConnected,
+  voiceMode = null,
+  voiceNotice = null,
   isMicMuted,
+  isMicUnavailable = false,
+  isVoiceOutputEnabled,
+  onToggleVoiceOutput,
   isAgentSpeaking,
   audioAmplitude,
   voicePersona,
   onVoicePersonaChange,
+  selectedLanguage,
+  activeLanguage,
+  switchPending,
+  onLanguageChange,
   onStartVoice,
   onStopVoice,
   onToggleMute,
@@ -93,16 +124,44 @@ export function LiveCallConsole({
   onResetSession,
   onSyncTicket,
   onOpenTicketQueue,
+  signedInUser,
 }: LiveCallConsoleProps) {
-  const [customerName, setCustomerName] = useState('Darius Holloway');
-  const [company, setCompany] = useState('Apex Freight Cloud');
-  const [customerEmail, setCustomerEmail] = useState('dholloway@apexfreight.io');
+  const [customerName, setCustomerName] = useState(
+    signedInUser?.displayName || 'Darius Holloway'
+  );
+  const [company, setCompany] = useState(
+    signedInUser?.company || 'Apex Freight Cloud'
+  );
+  const [customerEmail, setCustomerEmail] = useState(
+    signedInUser?.email || 'dholloway@apexfreight.io'
+  );
   const [slaTier, setSlaTier] = useState<'Enterprise' | 'Growth' | 'Standard'>('Enterprise');
-  const [targetPlatform, setTargetPlatform] = useState<CrmPlatform>('salesforce');
+  const [targetPlatform, setTargetPlatform] = useState<CrmPlatform>(
+    signedInUser?.targetPlatform || 'salesforce'
+  );
   const [draftUtterance, setDraftUtterance] = useState('');
   const [showPayload, setShowPayload] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const transcriptContainerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (signedInUser) {
+      setCustomerName((prev) =>
+        prev === 'Darius Holloway' || !prev.trim() ? signedInUser.displayName : prev
+      );
+      setCustomerEmail((prev) =>
+        prev === 'dholloway@apexfreight.io' || !prev.trim() ? signedInUser.email : prev
+      );
+      if (signedInUser.company) {
+        setCompany((prev) =>
+          prev === 'Apex Freight Cloud' || !prev.trim() ? signedInUser.company! : prev
+        );
+      }
+      if (signedInUser.targetPlatform) {
+        setTargetPlatform(signedInUser.targetPlatform);
+      }
+    }
+  }, [signedInUser]);
 
   useEffect(() => {
     if (turns.length > 0 && transcriptContainerRef.current) {
@@ -136,6 +195,7 @@ export function LiveCallConsole({
     setCustomerEmail(scenario.customerEmail);
     setSlaTier(scenario.slaTier);
     setTargetPlatform(scenario.targetPlatform);
+    onLanguageChange('auto');
     await onSendTurn({
       utterance: scenario.utterance,
       customerName: scenario.customerName,
@@ -143,6 +203,7 @@ export function LiveCallConsole({
       customerEmail: scenario.customerEmail,
       slaTier: scenario.slaTier,
       targetPlatform: scenario.targetPlatform,
+      resetLock: true,
     });
   };
 
@@ -165,10 +226,10 @@ export function LiveCallConsole({
   return (
     <div className="space-y-6">
       {/* Top KPI summary row across full width */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 bg-white border border-slate-200 rounded-lg divide-y lg:divide-y-0 lg:divide-x divide-slate-200">
+      <div className="grid grid-cols-2 lg:grid-cols-4 bg-white border border-slate-200/90 rounded-xl shadow-[0_1px_2px_rgba(15,23,42,0.04)] divide-y lg:divide-y-0 lg:divide-x divide-slate-200/80 overflow-hidden">
         <div className="px-5 py-4">
           <p className="text-xs font-medium text-slate-500">Avg Response Latency</p>
-          <p className="mt-1 text-2xl font-semibold tracking-tight text-slate-900 font-mono tabular-nums">
+          <p className="mt-1.5 text-2xl font-semibold tracking-tight text-slate-900 font-mono tabular-nums">
             {metrics.avgLatencyMs > 0 ? `${metrics.avgLatencyMs} ms` : '—'}
           </p>
           <p className="mt-1 text-xs text-slate-500 font-mono tabular-nums">
@@ -178,7 +239,7 @@ export function LiveCallConsole({
         <div className="px-5 py-4">
           <p className="text-xs font-medium text-slate-500">Live Caller Sentiment</p>
           <p
-            className={`mt-1 text-2xl font-semibold tracking-tight font-mono tabular-nums ${sentimentColorClass(
+            className={`mt-1.5 text-2xl font-semibold tracking-tight font-mono tabular-nums ${sentimentColorClass(
               latestNlu?.sentiment
             )}`}
           >
@@ -190,7 +251,7 @@ export function LiveCallConsole({
         </div>
         <div className="px-5 py-4">
           <p className="text-xs font-medium text-slate-500">Detected Intent</p>
-          <p className="mt-1 text-lg font-semibold tracking-tight text-slate-900 truncate font-mono">
+          <p className="mt-1.5 text-lg font-semibold tracking-tight text-slate-900 truncate font-mono">
             {latestNlu?.intent ?? 'awaiting_utterance'}
           </p>
           <p className="mt-1 text-xs text-slate-500 font-mono tabular-nums">
@@ -200,7 +261,7 @@ export function LiveCallConsole({
         <div className="px-5 py-4">
           <p className="text-xs font-medium text-slate-500">Active CRM Triage</p>
           <p
-            className={`mt-1 text-2xl font-semibold tracking-tight font-mono tabular-nums ${
+            className={`mt-1.5 text-2xl font-semibold tracking-tight font-mono tabular-nums ${
               activeTicket ? priorityColorClass(activeTicket.priority) : 'text-slate-900'
             }`}
           >
@@ -219,7 +280,7 @@ export function LiveCallConsole({
       {errorMessage && (
         <div
           role="alert"
-          className="flex items-start gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800"
+          className="flex items-start gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-800"
         >
           <AlertCircle className="h-4 w-4 mt-0.5 shrink-0 text-red-600" />
           <div className="flex-1">{errorMessage}</div>
@@ -228,20 +289,39 @@ export function LiveCallConsole({
 
       {/* Main 2-column Voice & Telemetry Split */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
-        {/* Left: Live Voice & Transcript Stream */}
-        <section className="xl:col-span-7 bg-white border border-slate-200 rounded-lg flex flex-col">
-          {/* Caller Context & Live Audio Bar */}
-          <div className="p-5 border-b border-slate-200 space-y-4">
+        {/* Left: Live Voice Studio & Transcript Stream */}
+        <section className="xl:col-span-7 bg-white border border-slate-200/90 rounded-xl shadow-[0_1px_2px_rgba(15,23,42,0.04)] overflow-hidden flex flex-col">
+          {/* Dark Acoustic Studio Stage */}
+          <div className="p-5 bg-slate-950 text-white space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div className="min-w-0">
-                <h2 className="text-base font-semibold text-slate-900">
+                <h2 className="text-base font-semibold text-white">
                   Real-Time Voice & NLU Stream
                 </h2>
-                <p className="text-xs text-slate-500 mt-0.5 truncate">
-                  Full-duplex 16kHz/24kHz PCM voice with live transcription & CRM tagging
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Full-duplex 16kHz/24kHz PCM voice, NLU & CRM triage
                 </p>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={onToggleVoiceOutput}
+                  data-testid="voice-output-toggle"
+                  aria-label={isVoiceOutputEnabled ? 'Mute voice output' : 'Enable voice output'}
+                  title={isVoiceOutputEnabled ? 'Speaker output active' : 'Speaker output muted'}
+                  className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap shrink-0 ${
+                    isVoiceOutputEnabled
+                      ? 'bg-slate-900 border-slate-700 text-sky-300 hover:bg-slate-800'
+                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {isVoiceOutputEnabled ? (
+                    <Volume2 className="h-3.5 w-3.5" />
+                  ) : (
+                    <VolumeX className="h-3.5 w-3.5" />
+                  )}
+                  {isVoiceOutputEnabled ? 'Audio On' : 'Muted'}
+                </button>
                 {!isVoiceConnected ? (
                   <button
                     type="button"
@@ -252,36 +332,58 @@ export function LiveCallConsole({
                         customerEmail,
                         slaTier,
                         platform: targetPlatform,
+                        language: activeLanguage || selectedLanguage,
                       })
                     }
-                    className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 transition-colors whitespace-nowrap shrink-0"
+                    className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 transition-colors whitespace-nowrap shrink-0"
                   >
                     <PhoneCall className="h-3.5 w-3.5" />
                     Connect Live Voice
                   </button>
                 ) : (
                   <>
-                    <button
-                      type="button"
-                      onClick={onToggleMute}
-                      aria-label={isMicMuted ? 'Unmute microphone' : 'Mute microphone'}
-                      className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-md border transition-colors whitespace-nowrap shrink-0 ${
-                        isMicMuted
-                          ? 'bg-amber-50 border-amber-300 text-amber-800'
-                          : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                      }`}
-                    >
-                      {isMicMuted ? (
+                    {isMicUnavailable ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onStartVoice({
+                            customerName,
+                            company,
+                            customerEmail,
+                            slaTier,
+                            platform: targetPlatform,
+                            language: activeLanguage || selectedLanguage,
+                          })
+                        }
+                        title="Retry microphone access"
+                        className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border bg-amber-500/15 border-amber-400/40 text-amber-200 hover:bg-amber-500/25 transition-colors whitespace-nowrap shrink-0"
+                      >
                         <MicOff className="h-3.5 w-3.5" />
-                      ) : (
-                        <Mic className="h-3.5 w-3.5 text-blue-600" />
-                      )}
-                      {isMicMuted ? 'Muted' : 'Mic Active'}
-                    </button>
+                        Retry Mic
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={onToggleMute}
+                        aria-label={isMicMuted ? 'Unmute microphone' : 'Mute microphone'}
+                        className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap shrink-0 ${
+                          isMicMuted
+                            ? 'bg-amber-500/15 border-amber-400/40 text-amber-300'
+                            : 'bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-800'
+                        }`}
+                      >
+                        {isMicMuted ? (
+                          <MicOff className="h-3.5 w-3.5" />
+                        ) : (
+                          <Mic className="h-3.5 w-3.5 text-blue-400" />
+                        )}
+                        {isMicMuted ? 'Muted' : 'Mic Active'}
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={onStopVoice}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-red-600 rounded-md hover:bg-red-700 transition-colors whitespace-nowrap shrink-0"
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-red-600 rounded-lg hover:bg-red-500 transition-colors whitespace-nowrap shrink-0"
                     >
                       <PhoneOff className="h-3.5 w-3.5" />
                       End Call
@@ -292,7 +394,7 @@ export function LiveCallConsole({
                   <button
                     type="button"
                     onClick={onResetSession}
-                    className="px-3 py-2 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-md hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
+                    className="px-3 py-2 text-xs font-medium text-slate-300 bg-slate-900 border border-slate-700 rounded-lg hover:bg-slate-800 hover:text-white transition-colors whitespace-nowrap shrink-0"
                   >
                     New Session
                   </button>
@@ -300,37 +402,74 @@ export function LiveCallConsole({
               </div>
             </div>
 
-            {/* Waveform Canvas */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs text-slate-500">
-                <span className="flex items-center gap-2 font-medium text-slate-700">
-                  {isVoiceConnected && (
-                    <span
-                      aria-hidden="true"
-                      className="inline-block h-2 w-2 rounded-full bg-blue-600 animate-pulse"
-                    />
-                  )}
-                  {isAgentSpeaking
-                    ? 'Agent Speaking (24kHz PCM)'
-                    : isVoiceConnected
-                    ? 'Listening to Caller (16kHz PCM)'
-                    : 'Audio Channel Standby'}
-                </span>
-                <span className="font-mono tabular-nums">
-                  Voice: {voicePersona} · Target: {targetPlatform === 'salesforce' ? 'Salesforce' : 'Zendesk'}
-                </span>
-              </div>
-              <VoiceWaveform
-                isLive={isVoiceConnected && !isMicMuted}
-                isAgentSpeaking={isAgentSpeaking}
+            {/* 3D Talking Hologram + Waveform Studio Meter */}
+            <div className="flex flex-col sm:flex-row items-stretch gap-3.5">
+              <HologramAvatar3D
+                isSpeaking={isAgentSpeaking}
+                isThinking={isProcessingTurn}
+                isLiveConnected={isVoiceConnected}
                 amplitude={audioAmplitude}
                 sentimentScore={sentimentScore}
               />
+              <div className="flex-1 min-w-0 flex flex-col justify-between gap-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+                  <span className="flex items-center gap-2 font-medium text-slate-200">
+                    {isVoiceConnected && (
+                      <span
+                        aria-hidden="true"
+                        className="inline-block h-2 w-2 rounded-full bg-emerald-400 animate-pulse"
+                      />
+                    )}
+                    {isAgentSpeaking
+                      ? isVoiceOutputEnabled || isVoiceConnected
+                        ? 'Agent Speaking (24kHz PCM)'
+                        : 'AI Assistant Responding'
+                      : isVoiceConnected && voiceMode === 'speaker'
+                      ? 'Speaker Mode Active (Type or Pick Scenario)'
+                      : isVoiceConnected && voiceMode === 'bridge'
+                      ? 'Listening via Voice Bridge (16kHz PCM)'
+                      : isVoiceConnected
+                      ? 'Listening to Caller (16kHz PCM)'
+                      : 'Audio Channel Standby'}
+                  </span>
+                  <span className="font-mono tabular-nums text-slate-400">
+                    Lang:{' '}
+                    <span className="text-slate-200">
+                      {switchPending
+                        ? 'Awaiting Selection'
+                        : activeLanguage
+                        ? `${activeLanguage} (Locked)`
+                        : 'Auto-detect'}
+                    </span>{' '}
+                    · Voice: <span className="text-slate-200">{voicePersona}</span> · Target:{' '}
+                    <span className="text-slate-200">
+                      {targetPlatform === 'salesforce' ? 'Salesforce' : 'Zendesk'}
+                    </span>
+                  </span>
+                </div>
+                {voiceNotice && isVoiceConnected && (
+                  <p
+                    data-testid="voice-bridge-notice"
+                    className="text-[11px] text-slate-300 bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5"
+                  >
+                    {voiceNotice}
+                  </p>
+                )}
+                <VoiceWaveform
+                  variant="dark"
+                  isLive={isVoiceConnected && !isMicMuted}
+                  isAgentSpeaking={isAgentSpeaking}
+                  amplitude={audioAmplitude}
+                  sentimentScore={sentimentScore}
+                />
+              </div>
             </div>
+          </div>
 
-            {/* Compact Caller Context Bar */}
-            <div className="grid grid-cols-2 sm:grid-cols-12 gap-3 pt-1">
-              <div className="sm:col-span-3">
+          {/* Compact Caller Context Bar */}
+          <div className="p-5 border-b border-slate-200/80 bg-white">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div>
                 <label htmlFor="caller-name" className="block text-xs font-medium text-slate-600 mb-1">
                   Caller Name
                 </label>
@@ -339,10 +478,10 @@ export function LiveCallConsole({
                   type="text"
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
-                  className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-md text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-600"
+                  className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-600"
                 />
               </div>
-              <div className="sm:col-span-3">
+              <div>
                 <label htmlFor="caller-company" className="block text-xs font-medium text-slate-600 mb-1">
                   Account
                 </label>
@@ -351,10 +490,10 @@ export function LiveCallConsole({
                   type="text"
                   value={company}
                   onChange={(e) => setCompany(e.target.value)}
-                  className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-md text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-600"
+                  className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-600"
                 />
               </div>
-              <div className="sm:col-span-2">
+              <div>
                 <label htmlFor="caller-sla" className="block text-xs font-medium text-slate-600 mb-1">
                   SLA Tier
                 </label>
@@ -364,14 +503,14 @@ export function LiveCallConsole({
                   onChange={(e) =>
                     setSlaTier(e.target.value as 'Enterprise' | 'Growth' | 'Standard')
                   }
-                  className="w-full px-2 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-md text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-600"
+                  className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-600"
                 >
                   <option value="Enterprise">Enterprise</option>
                   <option value="Growth">Growth</option>
                   <option value="Standard">Standard</option>
                 </select>
               </div>
-              <div className="sm:col-span-2">
+              <div>
                 <label htmlFor="target-crm" className="block text-xs font-medium text-slate-600 mb-1">
                   Target CRM
                 </label>
@@ -379,13 +518,34 @@ export function LiveCallConsole({
                   id="target-crm"
                   value={targetPlatform}
                   onChange={(e) => setTargetPlatform(e.target.value as CrmPlatform)}
-                  className="w-full px-2 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-md text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-600"
+                  className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-600"
                 >
                   <option value="salesforce">Salesforce</option>
                   <option value="zendesk">Zendesk</option>
                 </select>
               </div>
-              <div className="col-span-2 sm:col-span-2">
+              <div>
+                <label htmlFor="session-language" className="block text-xs font-medium text-slate-600 mb-1">
+                  Language
+                </label>
+                <select
+                  id="session-language"
+                  value={activeLanguage || selectedLanguage}
+                  onChange={(e) => onLanguageChange(e.target.value)}
+                  className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-600"
+                >
+                  {SUPPORTED_LANGUAGES.map((lang) => (
+                    <option key={lang.value} value={lang.value}>
+                      {lang.label}
+                    </option>
+                  ))}
+                  {activeLanguage &&
+                    !SUPPORTED_LANGUAGES.some((l) => l.value === activeLanguage) && (
+                      <option value={activeLanguage}>{activeLanguage}</option>
+                    )}
+                </select>
+              </div>
+              <div>
                 <label htmlFor="voice-persona" className="block text-xs font-medium text-slate-600 mb-1">
                   Voice Model
                 </label>
@@ -393,7 +553,7 @@ export function LiveCallConsole({
                   id="voice-persona"
                   value={voicePersona}
                   onChange={(e) => onVoicePersonaChange(e.target.value as VoicePersona)}
-                  className="w-full px-2 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-md text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-600"
+                  className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-600"
                 >
                   <option value="Zephyr">Zephyr</option>
                   <option value="Kore">Kore</option>
@@ -405,7 +565,7 @@ export function LiveCallConsole({
           </div>
 
           {/* Instant Caller Scenarios */}
-          <div className="px-5 py-3 bg-slate-50 border-b border-slate-200">
+          <div className="px-5 py-3 bg-slate-50/80 border-b border-slate-200/80">
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="text-xs font-medium text-slate-500 mr-1">Scenarios:</span>
               {CALLER_SCENARIOS.map((scenario) => (
@@ -414,7 +574,7 @@ export function LiveCallConsole({
                   type="button"
                   disabled={isProcessingTurn}
                   onClick={() => handleScenarioClick(scenario)}
-                  className="px-2.5 py-1 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-md hover:border-blue-400 hover:text-blue-700 disabled:opacity-50 transition-colors whitespace-nowrap shrink-0"
+                  className="px-2.5 py-1 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:border-blue-400 hover:text-blue-700 disabled:opacity-50 transition-colors whitespace-nowrap shrink-0"
                 >
                   {scenario.title}
                 </button>
@@ -426,71 +586,129 @@ export function LiveCallConsole({
           <div
             ref={transcriptContainerRef}
             data-testid="transcript-stream"
-            className="p-5 min-h-[280px] max-h-[400px] overflow-y-auto divide-y divide-slate-100"
+            className="p-5 min-h-[280px] max-h-[400px] overflow-y-auto clean-scroll space-y-3"
           >
             {turns.length === 0 ? (
-              <div className="h-[260px] flex flex-col items-center justify-center text-center px-6">
-                <p className="text-sm font-medium text-slate-900">
+              <div className="h-[240px] flex flex-col items-center justify-center text-center px-6">
+                <div className="h-10 w-10 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center mb-3">
+                  <Mic className="h-5 w-5" />
+                </div>
+                <p className="text-sm font-semibold text-slate-900">
                   Ready for live voice or simulated caller turn
                 </p>
-                <p className="mt-1 text-xs text-slate-500 max-w-md">
-                  Click &ldquo;Connect Live Voice&rdquo; to speak via microphone, choose a test scenario above, or type a caller utterance below to trigger real-time NLU, sentiment analysis, and CRM auto-tagging.
+                <p className="mt-1 text-xs text-slate-500 max-w-md leading-relaxed">
+                  Click &ldquo;Connect Live Voice&rdquo; to speak via microphone, choose a test scenario above, or type any question below to start real-time NLU & CRM triage.
                 </p>
               </div>
             ) : (
-              turns.map((turn) => (
-                <div key={turn.id} className="py-3.5 first:pt-0 last:pb-0">
-                  <div className="flex items-center justify-between gap-4 text-xs">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`font-semibold ${
-                          turn.speaker === 'agent' ? 'text-blue-700' : 'text-slate-900'
-                        }`}
-                      >
-                        {turn.speaker === 'agent' ? 'Meridian AI Agent' : customerName}
-                      </span>
-                      <span aria-hidden="true" className="text-slate-300">
-                        ·
-                      </span>
-                      <span className="font-mono tabular-nums text-slate-500">
-                        {turn.timestamp}
-                      </span>
-                      {turn.nlu && (
-                        <>
-                          <span aria-hidden="true" className="text-slate-300">
-                            ·
+              turns.map((turn) =>
+                turn.speaker === 'system' ? (
+                  <div
+                    key={turn.id}
+                    data-testid="language-transition-notice"
+                    className="py-1"
+                  >
+                    <div className="flex items-start gap-2.5 px-3.5 py-2.5 bg-slate-50 rounded-xl text-xs text-slate-700">
+                      <Globe className="h-3.5 w-3.5 mt-0.5 shrink-0 text-blue-600" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2 font-mono text-[11px] text-slate-500">
+                          <span>
+                            {turn.previousLanguage && turn.language
+                              ? `${turn.previousLanguage} -> ${turn.language}`
+                              : turn.language
+                              ? `Language -> ${turn.language}`
+                              : 'Language Switched'}
                           </span>
-                          <span className={`font-medium ${sentimentColorClass(turn.nlu.sentiment)}`}>
-                            {turn.nlu.sentiment} ({turn.nlu.emotion})
-                          </span>
-                        </>
+                          <span className="tabular-nums">{turn.timestamp}</span>
+                        </div>
+                        <p className="mt-0.5 text-xs font-medium text-slate-800 leading-relaxed">
+                          {turn.text}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    key={turn.id}
+                    className={`rounded-xl px-4 py-3 ${
+                      turn.speaker === 'agent' ? 'bg-blue-50/60' : 'bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-4 text-xs">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span
+                          className={`h-5 w-5 rounded-full text-[10px] font-semibold flex items-center justify-center shrink-0 ${
+                            turn.speaker === 'agent'
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-slate-800 text-white'
+                          }`}
+                        >
+                          {turn.speaker === 'agent'
+                            ? 'M'
+                            : customerName.trim().charAt(0).toUpperCase() || 'C'}
+                        </span>
+                        <span
+                          className={`font-semibold truncate ${
+                            turn.speaker === 'agent' ? 'text-blue-700' : 'text-slate-900'
+                          }`}
+                        >
+                          {turn.speaker === 'agent' ? 'Meridian AI Agent' : customerName}
+                        </span>
+                        <span aria-hidden="true" className="text-slate-300">
+                          ·
+                        </span>
+                        <span className="font-mono tabular-nums text-slate-500 shrink-0">
+                          {turn.timestamp}
+                        </span>
+                        {turn.nlu && (
+                          <>
+                            <span aria-hidden="true" className="text-slate-300">
+                              ·
+                            </span>
+                            <span
+                              className={`font-medium truncate ${sentimentColorClass(
+                                turn.nlu.sentiment
+                              )}`}
+                            >
+                              {turn.nlu.sentiment} ({turn.nlu.emotion})
+                            </span>
+                          </>
+                        )}
+                      </div>
+                      {typeof turn.latencyMs === 'number' && (
+                        <span className="font-mono tabular-nums text-slate-500 shrink-0">
+                          {turn.latencyMs} ms
+                        </span>
                       )}
                     </div>
-                    {typeof turn.latencyMs === 'number' && (
-                      <span className="font-mono tabular-nums text-slate-500">
-                        {turn.latencyMs} ms
-                      </span>
+                    <p className="mt-1.5 text-sm leading-relaxed text-slate-800 pl-7">
+                      {turn.text}
+                    </p>
+                    {turn.nlu && (
+                      <div className="mt-2 pl-7 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 font-mono">
+                        <span>intent:{turn.nlu.intent}</span>
+                        {turn.language && (
+                          <>
+                            <span aria-hidden="true">·</span>
+                            <span className="text-slate-600">lang:{turn.language.toLowerCase()}</span>
+                          </>
+                        )}
+                        {turn.nlu.urgencySignals.length > 0 && (
+                          <>
+                            <span aria-hidden="true">·</span>
+                            <span className="text-red-600">
+                              signals: {turn.nlu.urgencySignals.join(', ')}
+                            </span>
+                          </>
+                        )}
+                      </div>
                     )}
                   </div>
-                  <p className="mt-1.5 text-sm leading-relaxed text-slate-800">{turn.text}</p>
-                  {turn.nlu && (
-                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 font-mono">
-                      <span>intent:{turn.nlu.intent}</span>
-                      {turn.nlu.urgencySignals.length > 0 && (
-                        <>
-                          <span aria-hidden="true">·</span>
-                          <span className="text-red-600">
-                            signals: {turn.nlu.urgencySignals.join(', ')}
-                          </span>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))
+                )
+              )
             )}
             {isProcessingTurn && (
-              <div className="py-3 text-xs text-blue-700 font-medium">
+              <div className="py-2 px-1 text-xs text-blue-700 font-medium">
                 Analyzing NLU, sentiment & auto-tagging CRM ticket...
               </div>
             )}
@@ -499,7 +717,7 @@ export function LiveCallConsole({
           {/* Utterance Composer */}
           <form
             onSubmit={handleSubmitDraft}
-            className="p-4 border-t border-slate-200 bg-slate-50 rounded-b-lg flex items-center gap-3"
+            className="p-4 border-t border-slate-200/80 bg-slate-50/70 flex items-center gap-3"
           >
             <label htmlFor="caller-utterance-input" className="sr-only">
               Simulate caller speech or follow-up message
@@ -509,13 +727,13 @@ export function LiveCallConsole({
               type="text"
               value={draftUtterance}
               onChange={(e) => setDraftUtterance(e.target.value)}
-              placeholder="Type a caller utterance to test low-latency NLU & CRM triage..."
-              className="flex-1 px-3.5 py-2 text-sm bg-white border border-slate-200 rounded-md text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-600"
+              placeholder="Type any question or caller message to chat with Meridian AI..."
+              className="flex-1 px-3.5 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-600"
             />
             <button
               type="submit"
               disabled={isProcessingTurn || !draftUtterance.trim()}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-white bg-slate-900 rounded-md hover:bg-slate-800 disabled:opacity-40 transition-colors whitespace-nowrap shrink-0"
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:opacity-40 transition-colors whitespace-nowrap shrink-0"
             >
               <Send className="h-3.5 w-3.5" />
               Send Turn
@@ -526,7 +744,7 @@ export function LiveCallConsole({
         {/* Right: NLU Telemetry & Live CRM Auto-Tagger */}
         <aside className="xl:col-span-5 space-y-6">
           {/* NLU & Sentiment Inspection */}
-          <section className="bg-white border border-slate-200 rounded-lg p-5 space-y-4">
+          <section className="bg-white border border-slate-200/90 rounded-xl shadow-[0_1px_2px_rgba(15,23,42,0.04)] p-5 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-base font-semibold text-slate-900">
                 Natural Language & Sentiment
@@ -536,8 +754,8 @@ export function LiveCallConsole({
               </span>
             </div>
 
-            {/* Sentiment Valence Bar */}
-            <div className="space-y-1.5">
+            {/* Sentiment Valence Spectrum Bar */}
+            <div className="space-y-2">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-slate-500">Sentiment Valence</span>
                 <span
@@ -550,18 +768,11 @@ export function LiveCallConsole({
                     : 'Neutral · 0.00'}
                 </span>
               </div>
-              <div className="h-2 w-full bg-slate-100 rounded-sm overflow-hidden relative">
+              <div className="relative h-2.5 w-full rounded-full bg-gradient-to-r from-red-500 via-amber-400 via-50% to-emerald-500">
                 <div
-                  className={`h-full transition-all duration-200 ${
-                    sentimentScore <= -0.3
-                      ? 'bg-red-600'
-                      : sentimentScore < -0.05
-                      ? 'bg-amber-500'
-                      : sentimentScore >= 0.3
-                      ? 'bg-emerald-600'
-                      : 'bg-slate-400'
-                  }`}
-                  style={{ width: `${Math.max(4, Math.min(100, sentimentPct))}%` }}
+                  aria-hidden="true"
+                  className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-4 w-4 rounded-full bg-white border-2 border-slate-900 shadow-xs transition-all duration-200"
+                  style={{ left: `${Math.max(4, Math.min(96, sentimentPct))}%` }}
                 />
               </div>
               <div className="flex justify-between text-[11px] font-mono tabular-nums text-slate-400">
@@ -605,7 +816,7 @@ export function LiveCallConsole({
           </section>
 
           {/* Linked CRM Ticket & Auto-Tags */}
-          <section className="bg-white border border-slate-200 rounded-lg p-5 space-y-4">
+          <section className="bg-white border border-slate-200/90 rounded-xl shadow-[0_1px_2px_rgba(15,23,42,0.04)] p-5 space-y-4">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-base font-semibold text-slate-900">
@@ -695,7 +906,7 @@ export function LiveCallConsole({
                     type="button"
                     onClick={handleSyncClick}
                     disabled={isSyncing}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors whitespace-nowrap shrink-0"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors whitespace-nowrap shrink-0"
                   >
                     <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
                     {isSyncing ? 'Syncing...' : 'Push to CRM'}
@@ -703,13 +914,13 @@ export function LiveCallConsole({
                 </div>
 
                 {showPayload && crmPayload && (
-                  <pre className="p-3 bg-slate-900 text-slate-100 rounded-md text-[11px] font-mono overflow-x-auto max-h-56">
+                  <pre className="p-3 bg-slate-950 text-slate-100 rounded-lg text-[11px] font-mono overflow-x-auto max-h-56">
                     {JSON.stringify(crmPayload, null, 2)}
                   </pre>
                 )}
               </div>
             ) : (
-              <div className="py-6 border-t border-slate-100 text-xs text-slate-500">
+              <div className="py-6 border-t border-slate-100 text-xs text-slate-500 leading-relaxed">
                 No active ticket for this call yet. Trigger a caller turn or live voice session to automatically classify priority and tag Salesforce or Zendesk.
               </div>
             )}
